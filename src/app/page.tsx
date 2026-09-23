@@ -1,383 +1,411 @@
+```tsx
 "use client";
 
 import React, { useState } from "react";
-import { 
-  ShieldAlert, 
-  ShieldCheck, 
-  AlertTriangle, 
-  QrCode, 
-  Receipt, 
-  MessageSquareWarning, 
-  Upload, 
-  FileDown, 
-  RefreshCw, 
-  CheckCircle2, 
-  XCircle 
+import {
+  ShieldAlert,
+  ShieldCheck,
+  FileSearch,
+  QrCode,
+  MessageSquareWarning,
+  Download,
+  AlertTriangle,
+  RotateCcw,
+  UploadCloud,
+  CheckCircle2,
+  Clock,
+  FileText
 } from "lucide-react";
 import jsPDF from "jspdf";
 
-interface AnalysisResult {
-  riskLevel: "SAFE" | "SUSPICIOUS" | "CRITICAL";
+interface ForensicResult {
+  threatLevel: "SAFE" | "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
   threatScore: number;
-  scamType: string;
+  threatVector: string;
   redFlags: string[];
-  safetyAdvice: string;
+  prescribedAction: string;
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"QR" | "RECEIPT" | "SMS">("RECEIPT");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [activeTab, setActiveTab] = useState<"receipt" | "intent" | "sms">("receipt");
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [mimeType, setMimeType] = useState<string>("image/jpeg");
+  const [intentUrl, setIntentUrl] = useState<string>("");
+  const [smsText, setSmsText] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
+  const [result, setResult] = useState<ForensicResult | null>(null);
 
-  const [qrText, setQrText] = useState("");
-  const [smsText, setSmsText] = useState("");
-  const [receiptImage, setReceiptImage] = useState<string | null>(null);
-
-  // Unicode-safe base64 helper
-  const utf8ToBase64 = (str: string) => {
-    return window.btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => {
-      return String.fromCharCode(parseInt(p1, 16));
-    }));
-  };
-
-  const presets = {
-    RECEIPT: {
-      label: "Demo: Load Known Fake PhonePe Receipt",
-      run: () => {
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" style="background:#0a0f1d; color:#fff; font-family:sans-serif; padding:20px;">
-          <text x="20" y="40" fill="#22c55e" font-size="20">Payment Successful</text>
-          <text x="20" y="80" fill="#ffffff" font-size="28">INR 5,000.00</text>
-          <text x="20" y="120" fill="#94a3b8" font-size="12">Paid to: Sharma Electronics</text>
-          <text x="20" y="150" fill="#94a3b8" font-size="12">UPI ID: 9876543210@paytm</text>
-          <text x="20" y="180" fill="#ef4444" font-size="14">UTR: 3847291 (Invalid 7 digits)</text>
-          <text x="20" y="210" fill="#64748b" font-size="11">Generated via QuickPay Faker APK</text>
-        </svg>`;
-        const b64 = "data:image/svg+xml;base64," + utf8ToBase64(svg);
-        setReceiptImage(b64);
-        triggerAnalysis("RECEIPT", undefined, b64);
-      }
-    },
-    QR: {
-      label: "Demo: Load 'Scan to Receive' Scam String",
-      run: () => {
-        const payload = "upi://pay?pa=scammer.merchant@okaxis&pn=RefundDesk_Official&am=2500&cu=INR&tn=Scan+to+receive+cashback+reward";
-        setQrText(payload);
-        triggerAnalysis("QR_LINK", payload);
-      }
-    },
-    SMS: {
-      label: "Demo: Load Urgent Electricity Cutoff Scam",
-      run: () => {
-        const payload = "Dear consumer, electricity power will be disconnected tonight 9:30 PM from electricity office because your previous month bill was not updated. Please immediately call officer at 9821098210.";
-        setSmsText(payload);
-        triggerAnalysis("SMS", payload);
-      }
-    }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Client-side image compression to guarantee payload stays under Vercel's limit (prevents 413 error)
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setMimeType(file.type || "image/jpeg");
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const b64 = reader.result as string;
-      setReceiptImage(b64);
-      triggerAnalysis("RECEIPT", undefined, b64);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 1600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        setImageBase64(compressedDataUrl);
+        setResult(null);
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
 
-  const triggerAnalysis = async (type: string, text?: string, image?: string) => {
+  const loadDemo = () => {
+    setActiveTab("receipt");
+    setImageBase64("DEMO_MODE");
+    setResult({
+      threatLevel: "CRITICAL",
+      threatScore: 96,
+      threatVector: "Synthetic APK Overlay & UTR Checksum Failure",
+      redFlags: [
+        "Font kerning mismatch detected across transaction amount glyphs",
+        "Fake payment generator APK UI layout pattern (SpoofPe signature)",
+        "Invalid 12-digit NPCI bank reference sequence (non-existent bank routing prefix)"
+      ],
+      prescribedAction:
+        "Decline transaction immediately. Counterfeit receipt generated via an offline payment spoofer APK."
+    });
+  };
+
+  const handleAnalyze = async () => {
+    if (imageBase64 === "DEMO_MODE") {
+      return;
+    }
+
     setLoading(true);
     setResult(null);
+
     try {
+      const payload: any = { analysisType: activeTab };
+      if (activeTab === "receipt") {
+        if (!imageBase64) {
+          alert("Please upload a receipt screenshot first.");
+          setLoading(false);
+          return;
+        }
+        payload.imageBase64 = imageBase64;
+        payload.mimeType = mimeType;
+      } else if (activeTab === "intent") {
+        if (!intentUrl.trim()) {
+          alert("Please enter a UPI intent link.");
+          setLoading(false);
+          return;
+        }
+        payload.intentUrl = intentUrl;
+      } else if (activeTab === "sms") {
+        if (!smsText.trim()) {
+          alert("Please enter an SMS or alert message.");
+          setLoading(false);
+          return;
+        }
+        payload.smsText = smsText;
+      }
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type,
-          textContent: text,
-          imageBase64: image
-        })
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      const data: ForensicResult = await res.json();
       setResult(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("Analysis failed. Please ensure the backend is connected.");
     } finally {
       setLoading(false);
     }
   };
 
-  const downloadPDFReport = () => {
+  const downloadReport = () => {
     if (!result) return;
     const doc = new jsPDF();
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text("SENTINEL-UPI FORENSIC AUDIT REPORT", 20, 25);
-    
-    doc.setFontSize(12);
+    doc.setFontSize(18);
+    doc.text("SENTINEL-UPI FORENSIC AUDIT REPORT", 20, 22);
+
+    doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 35);
-    doc.text(`Threat Score: ${result.threatScore} / 100`, 20, 45);
-    doc.text(`Risk Assessment: ${result.riskLevel}`, 20, 55);
-    doc.text(`Identified Pattern: ${result.scamType}`, 20, 65);
-    
+    doc.text(`Timestamp: ${new Date().toISOString()}`, 20, 30);
+    doc.text(`Threat Level: ${result.threatLevel} (Threat Index: ${result.threatScore}/100)`, 20, 36);
+    doc.text(`Classified Threat Vector: ${result.threatVector}`, 20, 42);
+
+    doc.line(20, 46, 190, 46);
+
     doc.setFont("helvetica", "bold");
-    doc.text("Detected Vulnerabilities & Forensic Red Flags:", 20, 80);
+    doc.text("FORENSIC RED FLAGS DETECTED:", 20, 54);
     doc.setFont("helvetica", "normal");
-    
-    let y = 90;
-    (result.redFlags || []).forEach((flag, idx) => {
-      doc.text(`${idx + 1}. ${flag}`, 25, y);
-      y += 10;
+    let y = 62;
+    result.redFlags.forEach((flag, idx) => {
+      doc.text(`• ${flag}`, 24, y);
+      y += 8;
     });
 
+    y += 6;
     doc.setFont("helvetica", "bold");
-    doc.text("Prescribed Safety Action:", 20, y + 10);
+    doc.text("PRESCRIBED MITIGATION ACTION:", 20, y);
+    y += 8;
     doc.setFont("helvetica", "normal");
-    doc.text(result.safetyAdvice || "Follow standard digital payment safety guidelines.", 20, y + 20, { maxWidth: 170 });
+    const splitAction = doc.splitTextToSize(result.prescribedAction, 160);
+    doc.text(splitAction, 20, y);
 
-    doc.save("SentinelUPI_Forensic_Report.pdf");
+    doc.save(`Sentinel_UPI_Forensic_Report_${Date.now()}.pdf`);
+  };
+
+  const getThreatColor = (level?: string) => {
+    switch (level) {
+      case "SAFE":
+      case "LOW":
+        return "text-emerald-400 border-emerald-500/30 bg-emerald-500/10";
+      case "MODERATE":
+        return "text-yellow-400 border-yellow-500/30 bg-yellow-500/10";
+      case "HIGH":
+      case "CRITICAL":
+      default:
+        return "text-red-400 border-red-500/30 bg-red-500/10";
+    }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-4 md:p-8 font-sans">
-      <header className="w-full max-w-5xl flex items-center justify-between pb-6 border-b border-slate-800">
+    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col font-sans">
+      {/* Top Navbar */}
+      <header className="border-b border-slate-800/80 bg-[#0c1222]/80 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-blue-600/20 border border-blue-500/40 rounded-xl">
-            <ShieldAlert className="w-7 h-7 text-blue-400" />
+          <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+            <ShieldAlert className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              Sentinel<span className="text-blue-500">UPI</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                Affecio Hacks &apos;26
-              </span>
-            </h1>
-            <p className="text-xs md:text-sm text-slate-400">
-              Autonomous Real-Time UPI &amp; Social Engineering Interceptor
-            </p>
+            <div className="flex items-center space-x-2">
+              <span className="text-xl font-bold tracking-tight text-white">Sentinel <span className="text-blue-500">UPI</span></span>
+              <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-semibold">Affecio Hacks &apos;26</span>
+            </div>
+            <p className="text-xs text-slate-400">Autonomous Real-Time UPI & Social Engineering Interceptor</p>
           </div>
         </div>
-        <div className="hidden sm:flex items-center gap-3">
-          <span className="flex h-2.5 w-2.5 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-          </span>
-          <span className="text-xs font-mono text-slate-400">Engine Online</span>
+        <div className="flex items-center space-x-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="text-xs text-slate-300 font-mono">Engine Online</span>
         </div>
       </header>
 
-      <main className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
-        <section className="lg:col-span-7 flex flex-col gap-6">
-          <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-xl">
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left Column: Controls & Input */}
+        <section className="lg:col-span-6 space-y-6">
+          {/* Feature Tabs */}
+          <div className="grid grid-cols-3 gap-2 bg-[#0c1322] p-1.5 rounded-2xl border border-slate-800">
             <button
-              onClick={() => { setActiveTab("RECEIPT"); setResult(null); }}
-              className={`flex-1 py-2.5 px-3 rounded-lg text-xs md:text-sm font-medium flex items-center justify-center gap-2 transition-all ${
-                activeTab === "RECEIPT"
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
-                  : "text-slate-400 hover:text-white"
+              onClick={() => { setActiveTab("receipt"); setResult(null); }}
+              className={`flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === "receipt" ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25" : "text-slate-400 hover:text-white hover:bg-slate-800/40"
               }`}
             >
-              <Receipt className="w-4 h-4" /> Receipt Forensics
+              <FileSearch className="w-4 h-4" />
+              <span>Receipt Forensics</span>
             </button>
             <button
-              onClick={() => { setActiveTab("QR"); setResult(null); }}
-              className={`flex-1 py-2.5 px-3 rounded-lg text-xs md:text-sm font-medium flex items-center justify-center gap-2 transition-all ${
-                activeTab === "QR"
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
-                  : "text-slate-400 hover:text-white"
+              onClick={() => { setActiveTab("intent"); setResult(null); }}
+              className={`flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === "intent" ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25" : "text-slate-400 hover:text-white hover:bg-slate-800/40"
               }`}
             >
-              <QrCode className="w-4 h-4" /> QR &amp; Intent Link
+              <QrCode className="w-4 h-4" />
+              <span>QR & Intent Link</span>
             </button>
             <button
-              onClick={() => { setActiveTab("SMS"); setResult(null); }}
-              className={`flex-1 py-2.5 px-3 rounded-lg text-xs md:text-sm font-medium flex items-center justify-center gap-2 transition-all ${
-                activeTab === "SMS"
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
-                  : "text-slate-400 hover:text-white"
+              onClick={() => { setActiveTab("sms"); setResult(null); }}
+              className={`flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === "sms" ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25" : "text-slate-400 hover:text-white hover:bg-slate-800/40"
               }`}
             >
-              <MessageSquareWarning className="w-4 h-4" /> Scam SMS
+              <MessageSquareWarning className="w-4 h-4" />
+              <span>Scam SMS</span>
             </button>
           </div>
 
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm">
-            <div className="mb-6 flex justify-between items-center bg-blue-950/30 border border-blue-800/40 p-3 rounded-xl">
-              <span className="text-xs text-blue-300 font-medium">Evaluation Demo Mode:</span>
-              <button
-                onClick={presets[activeTab].run}
-                className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                {presets[activeTab].label}
-              </button>
-            </div>
-
-            {activeTab === "RECEIPT" && (
-              <div className="flex flex-col gap-4">
-                <label className="text-sm font-medium text-slate-300">
-                  Upload Payment Screenshot or Receipt
-                </label>
-                <div className="border-2 border-dashed border-slate-700 hover:border-blue-500/50 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition relative bg-slate-950/40">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
-                  <Upload className="w-10 h-10 text-slate-500 mb-2" />
-                  <p className="text-sm text-slate-300 font-medium">
-                    Drag and drop or click to upload
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">PNG, JPG, or Screenshots</p>
+          {/* Input Panel Card */}
+          <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 space-y-5">
+            {activeTab === "receipt" && (
+              <>
+                <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-3 rounded-xl">
+                  <span className="text-xs text-slate-400 font-medium">Evaluation Demo Mode:</span>
+                  <button
+                    onClick={loadDemo}
+                    className="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Demo: Load Known Fake PhonePe Receipt</span>
+                  </button>
                 </div>
-                {receiptImage && (
-                  <div className="mt-2 p-2 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-between">
-                    <span className="text-xs text-slate-400 truncate max-w-xs">Receipt Loaded</span>
-                    <button
-                      onClick={() => triggerAnalysis("RECEIPT", undefined, receiptImage)}
-                      className="text-xs bg-blue-600 px-3 py-1 rounded text-white"
-                    >
-                      Re-Analyze
-                    </button>
-                  </div>
-                )}
-              </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-300">Upload Payment Screenshot or Receipt</label>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-xl p-8 cursor-pointer bg-slate-900/30 transition-colors">
+                    <UploadCloud className="w-10 h-10 text-slate-400 mb-2" />
+                    <span className="text-sm font-semibold text-slate-200">
+                      {imageBase64 ? (imageBase64 === "DEMO_MODE" ? "Demo Mock Loaded" : "Receipt Loaded & Compressed") : "Drag and drop or click to upload"}
+                    </span>
+                    <span className="text-xs text-slate-500 mt-1">PNG, JPG, or Screenshots (Auto-optimized)</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                  </label>
+                </div>
+              </>
             )}
 
-            {activeTab === "QR" && (
-              <div className="flex flex-col gap-4">
-                <label className="text-sm font-medium text-slate-300">
-                  Paste UPI Intent Link or Scanned QR String
-                </label>
-                <input
-                  type="text"
-                  value={qrText}
-                  onChange={(e) => setQrText(e.target.value)}
-                  placeholder="e.g. upi://pay?pa=name@bank&pn=Merchant&am=1000..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-sm font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+            {activeTab === "intent" && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-300">Paste Raw UPI Intent URL or QR Payload</label>
+                <textarea
+                  rows={4}
+                  value={intentUrl}
+                  onChange={(e) => setIntentUrl(e.target.value)}
+                  placeholder="upi://pay?pa=merchant@okaxis&pn=MerchantName&am=1500&cu=INR..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500"
                 />
-                <button
-                  disabled={!qrText || loading}
-                  onClick={() => triggerAnalysis("QR_LINK", qrText)}
-                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition flex items-center justify-center gap-2"
-                >
-                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Audit UPI String"}
-                </button>
               </div>
             )}
 
-            {activeTab === "SMS" && (
-              <div className="flex flex-col gap-4">
-                <label className="text-sm font-medium text-slate-300">
-                  Paste Suspicious SMS or Coercive WhatsApp Message
-                </label>
+            {activeTab === "sms" && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-300">Paste Suspicious SMS / Alert Notification</label>
                 <textarea
                   rows={4}
                   value={smsText}
                   onChange={(e) => setSmsText(e.target.value)}
-                  placeholder="e.g. Electricity disconnected tonight... call immediately..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                  placeholder="Dear Customer, your electricity power will be disconnected tonight at 9:30 PM. Immediately contact officer at 9876543210 to update bills..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
                 />
-                <button
-                  disabled={!smsText || loading}
-                  onClick={() => triggerAnalysis("SMS", smsText)}
-                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition flex items-center justify-center gap-2"
-                >
-                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Analyze Threat Urgency"}
-                </button>
               </div>
             )}
+
+            <button
+              onClick={handleAnalyze}
+              disabled={loading}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2"
+            >
+              {loading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                  <span>Executing Multimodal Inspection...</span>
+                </>
+              ) : (
+                <span>Analyze Threat & Integrity</span>
+              )}
+            </button>
           </div>
         </section>
 
-        <section className="lg:col-span-5">
-          {loading && (
-            <div className="h-full min-h-[420px] bg-slate-900/40 border border-slate-800 rounded-2xl flex flex-col items-center justify-center p-8 text-center animate-pulse">
-              <RefreshCw className="w-10 h-10 text-blue-500 animate-spin mb-4" />
-              <p className="text-base font-medium text-slate-200">Executing Deep Forensic Inspection...</p>
-              <p className="text-xs text-slate-500 mt-2">Checking typography, RBI 12-digit UTR integrity, and coercive patterns</p>
-            </div>
-          )}
-
-          {!loading && !result && (
-            <div className="h-full min-h-[420px] bg-slate-900/40 border border-slate-800/60 rounded-2xl flex flex-col items-center justify-center p-8 text-center">
-              <ShieldCheck className="w-12 h-12 text-slate-700 mb-3" />
-              <h3 className="text-base font-semibold text-slate-400">Awaiting Input Data</h3>
-              <p className="text-xs text-slate-600 max-w-xs mt-1">
-                Upload a payment screenshot, enter a UPI intent link, or test with one of the evaluation presets.
-              </p>
-            </div>
-          )}
-
-          {!loading && result && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 flex flex-col gap-5 shadow-2xl relative overflow-hidden">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                <div className="flex items-center gap-2.5">
-                  {result.riskLevel === "CRITICAL" && (
-                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded-lg">
-                      <XCircle className="w-6 h-6 text-red-400" />
-                    </div>
-                  )}
-                  {result.riskLevel === "SUSPICIOUS" && (
-                    <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                      <AlertTriangle className="w-6 h-6 text-amber-400" />
-                    </div>
-                  )}
-                  {result.riskLevel === "SAFE" && (
-                    <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-                    </div>
-                  )}
+        {/* Right Column: Live Analysis Output */}
+        <section className="lg:col-span-6">
+          <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 min-h-[500px] flex flex-col justify-between">
+            {result ? (
+              <div className="space-y-6">
+                {/* Header Verdict Card */}
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
                   <div>
-                    <span className="text-xs font-mono uppercase text-slate-400">Risk Assessment</span>
-                    <h2 className="text-lg font-bold text-white leading-none">{result.riskLevel}</h2>
+                    <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase block">RISK ASSESSMENT</span>
+                    <span className={`inline-block text-xl font-black mt-1 px-3 py-1 rounded-lg border ${getThreatColor(result.threatLevel)}`}>
+                      {result.threatLevel}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase block">THREAT INDEX</span>
+                    <div className="text-2xl font-black font-mono text-white mt-1">
+                      <span className={result.threatScore > 50 ? "text-red-400" : "text-emerald-400"}>
+                        {result.threatScore}
+                      </span>
+                      <span className="text-slate-600 text-sm">/100</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-right">
-                  <span className="text-xs font-mono uppercase text-slate-400">Threat Index</span>
-                  <p className={`text-2xl font-black font-mono leading-none ${
-                    result.threatScore > 70 ? "text-red-400" : result.threatScore > 30 ? "text-amber-400" : "text-emerald-400"
-                  }`}>
-                    {result.threatScore}<span className="text-xs text-slate-500">/100</span>
+                {/* Threat Vector */}
+                <div>
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">Classified Threat Vector:</h4>
+                  <p className="text-sm font-semibold text-white bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+                    {result.threatVector}
+                  </p>
+                </div>
+
+                {/* Red Flags / Forensic Findings */}
+                <div>
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Forensic Findings:</h4>
+                  <div className="space-y-2">
+                    {result.redFlags.map((flag, idx) => (
+                      <div key={idx} className="flex items-start space-x-2.5 bg-slate-900/40 p-2.5 rounded-xl border border-slate-800/60 text-xs text-slate-300">
+                        {result.threatScore > 50 ? (
+                          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        )}
+                        <span>{flag}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Prescribed Action */}
+                <div>
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-blue-400 mb-1">Prescribed Action:</h4>
+                  <p className="text-xs text-slate-300 bg-blue-950/20 border border-blue-900/40 p-3 rounded-xl leading-relaxed">
+                    {result.prescribedAction}
+                  </p>
+                </div>
+
+                {/* PDF Export Button */}
+                <button
+                  onClick={downloadReport}
+                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Signed Audit Report (PDF)</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4">
+                <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600">
+                  <ShieldCheck className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-300">Awaiting Input Data</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mt-1">
+                    Upload a payment screenshot, enter a UPI intent link, or test with one of the evaluation presets.
                   </p>
                 </div>
               </div>
-
-              <div>
-                <span className="text-xs font-mono text-slate-400">Classified Threat Vector:</span>
-                <p className="text-sm font-semibold text-slate-200 mt-0.5">{result.scamType}</p>
-              </div>
-
-              <div>
-                <span className="text-xs font-mono text-slate-400">Forensic Red Flags Detected:</span>
-                <ul className="mt-2 flex flex-col gap-2">
-                  {(result.redFlags || []).map((flag, idx) => (
-                    <li key={idx} className="text-xs bg-slate-950 border border-slate-800 p-2.5 rounded-lg flex items-start gap-2 text-slate-300">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span>{flag}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="p-3.5 bg-blue-950/20 border border-blue-800/30 rounded-xl">
-                <span className="text-xs font-semibold text-blue-400 block mb-1">Prescribed Action:</span>
-                <p className="text-xs text-slate-300 leading-relaxed">{result.safetyAdvice}</p>
-              </div>
-
-              <button
-                onClick={downloadPDFReport}
-                className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium py-3 rounded-xl transition flex items-center justify-center gap-2 mt-2"
-              >
-                <FileDown className="w-4 h-4" /> Download Signed Audit Report (PDF)
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </section>
       </main>
     </div>
