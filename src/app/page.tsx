@@ -1,4 +1,3 @@
-```tsx
 "use client";
 
 import React, { useState } from "react";
@@ -13,8 +12,6 @@ import {
   RotateCcw,
   UploadCloud,
   CheckCircle2,
-  Clock,
-  FileText
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -35,7 +32,7 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<ForensicResult | null>(null);
 
-  // Client-side image compression to guarantee payload stays under Vercel's limit (prevents 413 error)
+  // Client-side image compression: prevents Vercel 413 payload size errors
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -53,12 +50,12 @@ export default function Home() {
 
         if (width > height) {
           if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
+            height = Math.round(height * (MAX_WIDTH / width));
             width = MAX_WIDTH;
           }
         } else {
           if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
+            width = Math.round(width * (MAX_HEIGHT / height));
             height = MAX_HEIGHT;
           }
         }
@@ -135,7 +132,7 @@ export default function Home() {
       });
 
       if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}`);
+        throw new Error("Server returned HTTP " + res.status);
       }
 
       const data: ForensicResult = await res.json();
@@ -157,9 +154,9 @@ export default function Home() {
 
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.text(`Timestamp: ${new Date().toISOString()}`, 20, 30);
-    doc.text(`Threat Level: ${result.threatLevel} (Threat Index: ${result.threatScore}/100)`, 20, 36);
-    doc.text(`Classified Threat Vector: ${result.threatVector}`, 20, 42);
+    doc.text("Timestamp: " + new Date().toISOString(), 20, 30);
+    doc.text("Threat Level: " + result.threatLevel + " (Threat Index: " + result.threatScore + "/100)", 20, 36);
+    doc.text("Classified Threat Vector: " + result.threatVector, 20, 42);
 
     doc.line(20, 46, 190, 46);
 
@@ -167,8 +164,8 @@ export default function Home() {
     doc.text("FORENSIC RED FLAGS DETECTED:", 20, 54);
     doc.setFont("helvetica", "normal");
     let y = 62;
-    result.redFlags.forEach((flag, idx) => {
-      doc.text(`• ${flag}`, 24, y);
+    result.redFlags.forEach((flag) => {
+      doc.text("• " + flag, 24, y);
       y += 8;
     });
 
@@ -180,7 +177,7 @@ export default function Home() {
     const splitAction = doc.splitTextToSize(result.prescribedAction, 160);
     doc.text(splitAction, 20, y);
 
-    doc.save(`Sentinel_UPI_Forensic_Report_${Date.now()}.pdf`);
+    doc.save("Sentinel_UPI_Forensic_Report_" + Date.now() + ".pdf");
   };
 
   const getThreatColor = (level?: string) => {
@@ -207,10 +204,14 @@ export default function Home() {
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="text-xl font-bold tracking-tight text-white">Sentinel <span className="text-blue-500">UPI</span></span>
-              <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-semibold">Affecio Hacks &apos;26</span>
+              <span className="text-xl font-bold tracking-tight text-white">
+                Sentinel <span className="text-blue-500">UPI</span>
+              </span>
+              <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-semibold">
+                Affecio Hacks &apos;26
+              </span>
             </div>
-            <p className="text-xs text-slate-400">Autonomous Real-Time UPI & Social Engineering Interceptor</p>
+            <p className="text-xs text-slate-400">Autonomous Real-Time UPI &amp; Social Engineering Interceptor</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
@@ -227,27 +228,36 @@ export default function Home() {
           <div className="grid grid-cols-3 gap-2 bg-[#0c1322] p-1.5 rounded-2xl border border-slate-800">
             <button
               onClick={() => { setActiveTab("receipt"); setResult(null); }}
-              className={`flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
-                activeTab === "receipt" ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25" : "text-slate-400 hover:text-white hover:bg-slate-800/40"
-              }`}
+              className={
+                "flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all " +
+                (activeTab === "receipt"
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800/40")
+              }
             >
               <FileSearch className="w-4 h-4" />
               <span>Receipt Forensics</span>
             </button>
             <button
               onClick={() => { setActiveTab("intent"); setResult(null); }}
-              className={`flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
-                activeTab === "intent" ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25" : "text-slate-400 hover:text-white hover:bg-slate-800/40"
-              }`}
+              className={
+                "flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all " +
+                (activeTab === "intent"
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800/40")
+              }
             >
               <QrCode className="w-4 h-4" />
-              <span>QR & Intent Link</span>
+              <span>QR &amp; Intent Link</span>
             </button>
             <button
               onClick={() => { setActiveTab("sms"); setResult(null); }}
-              className={`flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
-                activeTab === "sms" ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25" : "text-slate-400 hover:text-white hover:bg-slate-800/40"
-              }`}
+              className={
+                "flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all " +
+                (activeTab === "sms"
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800/40")
+              }
             >
               <MessageSquareWarning className="w-4 h-4" />
               <span>Scam SMS</span>
@@ -274,7 +284,11 @@ export default function Home() {
                   <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-xl p-8 cursor-pointer bg-slate-900/30 transition-colors">
                     <UploadCloud className="w-10 h-10 text-slate-400 mb-2" />
                     <span className="text-sm font-semibold text-slate-200">
-                      {imageBase64 ? (imageBase64 === "DEMO_MODE" ? "Demo Mock Loaded" : "Receipt Loaded & Compressed") : "Drag and drop or click to upload"}
+                      {imageBase64
+                        ? imageBase64 === "DEMO_MODE"
+                          ? "Demo Mock Loaded"
+                          : "Receipt Loaded & Compressed"
+                        : "Drag and drop or click to upload"}
                     </span>
                     <span className="text-xs text-slate-500 mt-1">PNG, JPG, or Screenshots (Auto-optimized)</span>
                     <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
@@ -320,7 +334,7 @@ export default function Home() {
                   <span>Executing Multimodal Inspection...</span>
                 </>
               ) : (
-                <span>Analyze Threat & Integrity</span>
+                <span>Analyze Threat &amp; Integrity</span>
               )}
             </button>
           </div>
@@ -335,7 +349,7 @@ export default function Home() {
                 <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
                   <div>
                     <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase block">RISK ASSESSMENT</span>
-                    <span className={`inline-block text-xl font-black mt-1 px-3 py-1 rounded-lg border ${getThreatColor(result.threatLevel)}`}>
+                    <span className={"inline-block text-xl font-black mt-1 px-3 py-1 rounded-lg border " + getThreatColor(result.threatLevel)}>
                       {result.threatLevel}
                     </span>
                   </div>
