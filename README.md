@@ -1,6 +1,8 @@
 # 🛡️ SentinelUPI — Real-Time Visual Fraud & Social Engineering Interceptor
 > **Affecio Hacks '26 Submission** | Cyber Threat Intelligence & Payment Security
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-sentinel--upi.vercel.app-0070F3?style=for-the-badge&logo=vercel&logoColor=white)](https://sentinel-upi.vercel.app)
+
 SentinelUPI is an autonomous cybersecurity forensic tool designed to protect users and merchants against fake payment receipts, malicious UPI QR intent payloads, and high-pressure scam SMS messages using real-time multimodal AI forensics.
 
 ---
