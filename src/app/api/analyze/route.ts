@@ -54,9 +54,9 @@ Respond STRICTLY with valid raw JSON (no markdown formatting, no backticks, no m
       ];
     }
 
-    // Using gemini-2.0-flash / gemini-2.5-flash compatible endpoint
+    // Using gemini-2.0-flash / gemini-3.6-flash compatible endpoint
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents,
       config: {
         systemInstruction,
