@@ -30,16 +30,22 @@ SentinelUPI is an autonomous cybersecurity forensic tool designed to protect use
 - A Gemini API Key from Google AI Studio
 
 ### 2. Installation
-git clone https://github.com/YOUR_GITHUB_USERNAME/sentinel-upi.git
+```bash
+git clone [https://github.com/aryanm1224/sentinel-upi.git]
 cd sentinel-upi
 npm install
+```
 
 ### 3. Environment Setup
 Create a `.env.local` file in the root directory:
+```env
 GEMINI_API_KEY=your_gemini_api_key_here
+```
 
 ### 4. Run the Project
+```bash
 npm run dev
+```
 
 Open http://localhost:3000 in your browser.
 
