@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import {
-  ShieldAlert,
   ShieldCheck,
   FileSearch,
   QrCode,
@@ -40,7 +40,7 @@ export default function Home() {
     setMimeType(file.type || "image/jpeg");
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const MAX_WIDTH = 1200;
@@ -199,8 +199,15 @@ export default function Home() {
       {/* Top Navbar */}
       <header className="border-b border-slate-800/80 bg-[#0c1222]/80 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
-            <ShieldAlert className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center p-1 overflow-hidden">
+            <Image
+              src="/logo.png"
+              alt="Sentinel UPI Logo"
+              width={36}
+              height={36}
+              className="object-contain"
+              priority
+            />
           </div>
           <div>
             <div className="flex items-center space-x-2">
