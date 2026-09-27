@@ -33,7 +33,7 @@ SentinelUPI is an autonomous cybersecurity forensic tool designed to protect use
 
 ### 2. Installation
 ```bash
-git clone [https://github.com/aryanm1224/sentinel-upi.git]
+git clone https://github.com/aryanm1224/sentinel-upi.git
 cd sentinel-upi
 npm install
 ```
