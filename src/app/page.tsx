@@ -1,434 +1,362 @@
 "use client";
 
-import React, { useState } from "react";
-import Image from "next/image";
-import {
-  ShieldCheck,
-  FileSearch,
-  QrCode,
-  MessageSquareWarning,
-  Download,
-  AlertTriangle,
-  RotateCcw,
-  UploadCloud,
-  CheckCircle2,
-} from "lucide-react";
-import jsPDF from "jspdf";
+import React, { useState, useRef } from "react";
+import { Shield, ShieldAlert, CheckCircle2, AlertTriangle, FileDown, Eye, Upload, RefreshCw, Zap } from "lucide-react";
+import { computeSHA256, generateELACanvas } from "@/utils/forensics";
+import { generateForensicPDF } from "@/utils/pdfGenerator";
 
 interface ForensicResult {
-  threatLevel: "SAFE" | "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
   threatScore: number;
-  threatVector: string;
-  redFlags: string[];
-  prescribedAction: string;
+  verdict: string;
+  anomaliesDetected?: string[];
+  fontKerningMatch?: boolean;
+  checksumVerified?: boolean;
+  confidenceScore?: number;
+  uriAudit?: {
+    isValid: boolean;
+    vpa: string;
+    payeeName: string;
+    amount: string;
+    flags: string[];
+  } | null;
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"receipt" | "intent" | "sms">("receipt");
-  const [imageBase64, setImageBase64] = useState<string | null>(null);
-  const [mimeType, setMimeType] = useState<string>("image/jpeg");
-  const [intentUrl, setIntentUrl] = useState<string>("");
-  const [smsText, setSmsText] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [sha256Hash, setSha256Hash] = useState<string>("");
+  const [rawUriInput, setRawUriInput] = useState<string>("");
+  const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<ForensicResult | null>(null);
+  const [showELA, setShowELA] = useState<boolean>(false);
+  const [cooldown, setCooldown] = useState<boolean>(false);
 
-  // Client-side image compression: prevents Vercel 413 payload size errors
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    setMimeType(file.type || "image/jpeg");
+  // Ingestion handler: computes SHA-256 and sets preview
+  const processFile = async (file: File) => {
+    setImageFile(file);
+    setResult(null);
+    setShowELA(false);
+
+    const hash = await computeSHA256(file);
+    setSha256Hash(hash);
+
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new window.Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1600;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height = Math.round(height * (MAX_WIDTH / width));
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width = Math.round(width * (MAX_HEIGHT / height));
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.82);
-        setImageBase64(compressedDataUrl);
-        setResult(null);
-      };
-      img.src = event.target?.result as string;
+    reader.onload = (e) => {
+      setSelectedImage(e.target?.result as string);
     };
     reader.readAsDataURL(file);
   };
 
-  const loadDemo = () => {
-    setActiveTab("receipt");
-    setImageBase64("DEMO_MODE");
-    setResult({
-      threatLevel: "CRITICAL",
-      threatScore: 96,
-      threatVector: "Synthetic APK Overlay & UTR Checksum Failure",
-      redFlags: [
-        "Font kerning mismatch detected across transaction amount glyphs",
-        "Fake payment generator APK UI layout pattern (SpoofPe signature)",
-        "Invalid 12-digit NPCI bank reference sequence (non-existent bank routing prefix)"
-      ],
-      prescribedAction:
-        "Decline transaction immediately. Counterfeit receipt generated via an offline payment spoofer APK."
-    });
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
   };
 
-  const handleAnalyze = async () => {
-    if (imageBase64 === "DEMO_MODE") {
-      return;
+  // 1-Click Forensic Sandbox (Demo mode)
+  const loadDemoSample = (isForgery: boolean) => {
+    setResult(null);
+    setShowELA(false);
+
+    // Dynamic mock canvas receipt to avoid static asset dependencies
+    const canvas = document.createElement("canvas");
+    canvas.width = 600;
+    canvas.height = 800;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, 600, 800);
+
+    // Header bar
+    ctx.fillStyle = isForgery ? "#002e6e" : "#5f259f";
+    ctx.fillRect(0, 0, 600, 120);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 28px sans-serif";
+    ctx.fillText(isForgery ? "PAYMENT SUCCESSFUL" : "TRANSACTION SUCCESSFUL", 40, 75);
+
+    // Body content
+    ctx.fillStyle = "#1e293b";
+    ctx.font = isForgery ? "bold 44px 'Courier New'" : "bold 40px sans-serif";
+    ctx.fillText("INR 25,000.00", 40, 240);
+
+    ctx.font = "18px sans-serif";
+    ctx.fillStyle = "#64748b";
+    ctx.fillText("Paid to: Merchant Store", 40, 300);
+    ctx.fillText(isForgery ? "Ref: 998877" : "UPI Ref: 426819284719", 40, 340);
+    ctx.fillText("Date: 29 Sep 2026, 02:15 PM", 40, 380);
+
+    if (isForgery) {
+      // Intentional artifact mismatch box (simulating edited area)
+      ctx.fillStyle = "rgba(239, 68, 68, 0.15)";
+      ctx.fillRect(35, 195, 340, 60);
     }
 
-    setLoading(true);
-    setResult(null);
+    canvas.toBlob(async (blob) => {
+      if (blob) {
+        const file = new File(
+          [blob],
+          isForgery ? "spoofpe_sample_forgery.jpg" : "axis_genuine_receipt.jpg",
+          { type: "image/jpeg" }
+        );
+        processFile(file);
+      }
+    }, "image/jpeg", 0.92);
+  };
+
+  // Run full forensic pipeline
+  const runAnalysis = async () => {
+    if (cooldown || analyzing) return;
+    if (!selectedImage && !rawUriInput) return;
+
+    setAnalyzing(true);
+    setCooldown(true);
 
     try {
-      const payload: any = { analysisType: activeTab };
-      if (activeTab === "receipt") {
-        if (!imageBase64) {
-          alert("Please upload a receipt screenshot first.");
-          setLoading(false);
-          return;
-        }
-        payload.imageBase64 = imageBase64;
-        payload.mimeType = mimeType;
-      } else if (activeTab === "intent") {
-        if (!intentUrl.trim()) {
-          alert("Please enter a UPI intent link.");
-          setLoading(false);
-          return;
-        }
-        payload.intentUrl = intentUrl;
-      } else if (activeTab === "sms") {
-        if (!smsText.trim()) {
-          alert("Please enter an SMS or alert message.");
-          setLoading(false);
-          return;
-        }
-        payload.smsText = smsText;
+      const payload: any = {};
+      if (selectedImage) {
+        payload.imageBase64 = selectedImage;
+        payload.mimeType = imageFile?.type || "image/jpeg";
+      }
+      if (rawUriInput.trim()) {
+        payload.rawUri = rawUriInput.trim();
       }
 
-      const res = await fetch("/api/analyze", {
+      const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        throw new Error("Server returned HTTP " + res.status);
-      }
-
-      const data: ForensicResult = await res.json();
+      const data: ForensicResult = await response.json();
       setResult(data);
-    } catch (err: any) {
-      console.error(err);
-      alert("Analysis failed. Please ensure the backend is connected.");
+
+      // Trigger ELA generation if image present
+      if (imgRef.current && canvasRef.current) {
+        generateELACanvas(imgRef.current, canvasRef.current);
+      }
+    } catch {
+      setResult({
+        threatScore: 80,
+        verdict: "ANALYSIS FAILURE / FAIL-SECURE ACTIVE",
+        anomaliesDetected: ["Network error encountered. Transaction unverified."],
+      });
     } finally {
-      setLoading(false);
+      setAnalyzing(false);
+      // 5-second cooldown guardrail
+      setTimeout(() => setCooldown(false), 5000);
     }
   };
 
-  const downloadReport = () => {
+  const handleDownloadPDF = () => {
     if (!result) return;
-    const doc = new jsPDF();
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text("SENTINEL-UPI FORENSIC AUDIT REPORT", 20, 22);
-
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text("Timestamp: " + new Date().toISOString(), 20, 30);
-    doc.text("Threat Level: " + result.threatLevel + " (Threat Index: " + result.threatScore + "/100)", 20, 36);
-    doc.text("Classified Threat Vector: " + result.threatVector, 20, 42);
-
-    doc.line(20, 46, 190, 46);
-
-    doc.setFont("helvetica", "bold");
-    doc.text("FORENSIC RED FLAGS DETECTED:", 20, 54);
-    doc.setFont("helvetica", "normal");
-    let y = 62;
-    result.redFlags.forEach((flag) => {
-      doc.text("• " + flag, 24, y);
-      y += 8;
+    generateForensicPDF({
+      sha256: sha256Hash,
+      verdict: result.verdict,
+      threatScore: result.threatScore,
+      anomalies: result.anomaliesDetected || [],
+      timestamp: new Date().toISOString(),
     });
-
-    y += 6;
-    doc.setFont("helvetica", "bold");
-    doc.text("PRESCRIBED MITIGATION ACTION:", 20, y);
-    y += 8;
-    doc.setFont("helvetica", "normal");
-    const splitAction = doc.splitTextToSize(result.prescribedAction, 160);
-    doc.text(splitAction, 20, y);
-
-    doc.save("Sentinel_UPI_Forensic_Report_" + Date.now() + ".pdf");
-  };
-
-  const getThreatColor = (level?: string) => {
-    switch (level) {
-      case "SAFE":
-      case "LOW":
-        return "text-emerald-400 border-emerald-500/30 bg-emerald-500/10";
-      case "MODERATE":
-        return "text-yellow-400 border-yellow-500/30 bg-yellow-500/10";
-      case "HIGH":
-      case "CRITICAL":
-      default:
-        return "text-red-400 border-red-500/30 bg-red-500/10";
-    }
   };
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col font-sans">
-      {/* Top Navbar */}
-      <header className="border-b border-slate-800/80 bg-[#0c1222]/80 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center p-1 overflow-hidden">
-            <Image
-              src="/logo.png"
-              alt="Sentinel UPI Logo"
-              width={36}
-              height={36}
-              className="object-contain"
-              priority
-            />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="text-xl font-bold tracking-tight text-white">
-                Sentinel <span className="text-blue-500">UPI</span>
-              </span>
-              <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-semibold">
-                Affecio Hacks &apos;26
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">Autonomous Real-Time UPI &amp; Social Engineering Interceptor</p>
-          </div>
+    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center px-4 py-12">
+      {/* Header */}
+      <header className="max-w-4xl w-full text-center mb-10">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-950/60 border border-indigo-700/40 text-indigo-400 text-xs font-mono uppercase tracking-wider mb-4">
+          <Shield className="w-3.5 h-3.5" />
+          Enterprise-Grade Forensic Sandbox
         </div>
-        <div className="flex items-center space-x-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="text-xs text-slate-300 font-mono">Engine Online</span>
-        </div>
+        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-slate-100 via-slate-200 to-indigo-300 bg-clip-text text-transparent">
+          Sentinel-UPI
+        </h1>
+        <p className="mt-3 text-slate-400 text-sm sm:text-base max-w-2xl mx-auto">
+          Client-side Error Level Analysis (ELA), NPCI deep-link protocol validation, and multimodal forgery verification.
+        </p>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Controls & Input */}
-        <section className="lg:col-span-6 space-y-6">
-          {/* Feature Tabs */}
-          <div className="grid grid-cols-3 gap-2 bg-[#0c1322] p-1.5 rounded-2xl border border-slate-800">
-            <button
-              onClick={() => { setActiveTab("receipt"); setResult(null); }}
-              className={
-                "flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all " +
-                (activeTab === "receipt"
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/40")
-              }
-            >
-              <FileSearch className="w-4 h-4" />
-              <span>Receipt Forensics</span>
-            </button>
-            <button
-              onClick={() => { setActiveTab("intent"); setResult(null); }}
-              className={
-                "flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all " +
-                (activeTab === "intent"
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/40")
-              }
-            >
-              <QrCode className="w-4 h-4" />
-              <span>QR &amp; Intent Link</span>
-            </button>
-            <button
-              onClick={() => { setActiveTab("sms"); setResult(null); }}
-              className={
-                "flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all " +
-                (activeTab === "sms"
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/40")
-              }
-            >
-              <MessageSquareWarning className="w-4 h-4" />
-              <span>Scam SMS</span>
-            </button>
+      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Ingestion Column */}
+        <section className="flex flex-col gap-5 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <Upload className="w-4 h-4 text-indigo-400" />
+            Evidence Ingestion
+          </h2>
+
+          {/* Upload Dropzone */}
+          <label className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition bg-slate-950/40 min-h-[200px]">
+            <input type="file" accept="image/*" onChange={handleFileInput} className="hidden" />
+            <Upload className="w-8 h-8 text-slate-400 mb-2" />
+            <span className="text-sm font-medium text-slate-200">Upload Receipt Screenshot</span>
+            <span className="text-xs text-slate-500 mt-1">PNG, JPG, or WEBP</span>
+          </label>
+
+          {/* 1-Click Forensic Sandbox Buttons */}
+          <div className="flex flex-col gap-2 pt-1 border-t border-slate-800/80">
+            <span className="text-xs font-mono text-slate-400">1-Click Sandbox Test:</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => loadDemoSample(true)}
+                className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-red-950/40 border border-red-800/60 text-red-300 hover:bg-red-900/60 transition flex items-center justify-center gap-1.5"
+              >
+                <Zap className="w-3.5 h-3.5 text-red-400" />
+                SpoofPe Sample
+              </button>
+              <button
+                type="button"
+                onClick={() => loadDemoSample(false)}
+                className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 hover:bg-emerald-900/60 transition flex items-center justify-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Authentic Sample
+              </button>
+            </div>
           </div>
 
-          {/* Input Panel Card */}
-          <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 space-y-5">
-            {activeTab === "receipt" && (
-              <>
-                <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-3 rounded-xl">
-                  <span className="text-xs text-slate-400 font-medium">Evaluation Demo Mode:</span>
-                  <button
-                    onClick={loadDemo}
-                    className="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Demo: Load Known Fake PhonePe Receipt</span>
-                  </button>
-                </div>
+          {/* Deep Link Input */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-mono text-slate-400">Raw UPI Deep-Link / QR String (Optional):</label>
+            <input
+              type="text"
+              placeholder="upi://pay?pa=merchant@upi&pn=Store..."
+              value={rawUriInput}
+              onChange={(e) => setRawUriInput(e.target.value)}
+              className="px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-slate-200"
+            />
+          </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-slate-300">Upload Payment Screenshot or Receipt</label>
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-xl p-8 cursor-pointer bg-slate-900/30 transition-colors">
-                    <UploadCloud className="w-10 h-10 text-slate-400 mb-2" />
-                    <span className="text-sm font-semibold text-slate-200">
-                      {imageBase64
-                        ? imageBase64 === "DEMO_MODE"
-                          ? "Demo Mock Loaded"
-                          : "Receipt Loaded & Compressed"
-                        : "Drag and drop or click to upload"}
-                    </span>
-                    <span className="text-xs text-slate-500 mt-1">PNG, JPG, or Screenshots (Auto-optimized)</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-                  </label>
-                </div>
+          {/* SHA-256 Digest Tag */}
+          {sha256Hash && (
+            <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 font-mono text-[10px] break-all text-slate-400">
+              <span className="text-indigo-400 font-bold block mb-0.5">SHA-256 Evidence Digest:</span>
+              {sha256Hash}
+            </div>
+          )}
+
+          {/* Execute Button */}
+          <button
+            onClick={runAnalysis}
+            disabled={(!selectedImage && !rawUriInput) || analyzing || cooldown}
+            className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 font-semibold text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20"
+          >
+            {analyzing ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Inspecting Kerning & Micro-Patterns...
+              </>
+            ) : cooldown ? (
+              "Pipeline Cooldown (5s)..."
+            ) : (
+              <>
+                <Shield className="w-4 h-4" />
+                Run Zero-Trust Forensic Audit
               </>
             )}
-
-            {activeTab === "intent" && (
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-slate-300">Paste Raw UPI Intent URL or QR Payload</label>
-                <textarea
-                  rows={4}
-                  value={intentUrl}
-                  onChange={(e) => setIntentUrl(e.target.value)}
-                  placeholder="upi://pay?pa=merchant@okaxis&pn=MerchantName&am=1500&cu=INR..."
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            )}
-
-            {activeTab === "sms" && (
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-slate-300">Paste Suspicious SMS / Alert Notification</label>
-                <textarea
-                  rows={4}
-                  value={smsText}
-                  onChange={(e) => setSmsText(e.target.value)}
-                  placeholder="Dear Customer, your electricity power will be disconnected tonight at 9:30 PM. Immediately contact officer at 9876543210 to update bills..."
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            )}
-
-            <button
-              onClick={handleAnalyze}
-              disabled={loading}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2"
-            >
-              {loading ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
-                  <span>Executing Multimodal Inspection...</span>
-                </>
-              ) : (
-                <span>Analyze Threat &amp; Integrity</span>
-              )}
-            </button>
-          </div>
+          </button>
         </section>
 
-        {/* Right Column: Live Analysis Output */}
-        <section className="lg:col-span-6">
-          <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 min-h-[500px] flex flex-col justify-between">
-            {result ? (
-              <div className="space-y-6">
-                {/* Header Verdict Card */}
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
-                  <div>
-                    <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase block">RISK ASSESSMENT</span>
-                    <span className={"inline-block text-xl font-black mt-1 px-3 py-1 rounded-lg border " + getThreatColor(result.threatLevel)}>
-                      {result.threatLevel}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase block">THREAT INDEX</span>
-                    <div className="text-2xl font-black font-mono text-white mt-1">
-                      <span className={result.threatScore > 50 ? "text-red-400" : "text-emerald-400"}>
-                        {result.threatScore}
-                      </span>
-                      <span className="text-slate-600 text-sm">/100</span>
-                    </div>
-                  </div>
-                </div>
+        {/* Inspection & Results Column */}
+        <section className="flex flex-col gap-5 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+              <Eye className="w-4 h-4 text-indigo-400" />
+              Forensic Viewport
+            </h2>
+            {selectedImage && (
+              <button
+                type="button"
+                onClick={() => setShowELA(!showELA)}
+                className="text-xs px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono transition"
+              >
+                {showELA ? "Show Original View" : "Toggle ELA Heatmap"}
+              </button>
+            )}
+          </div>
 
-                {/* Threat Vector */}
-                <div>
-                  <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">Classified Threat Vector:</h4>
-                  <p className="text-sm font-semibold text-white bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
-                    {result.threatVector}
-                  </p>
-                </div>
-
-                {/* Red Flags / Forensic Findings */}
-                <div>
-                  <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Forensic Findings:</h4>
-                  <div className="space-y-2">
-                    {result.redFlags.map((flag, idx) => (
-                      <div key={idx} className="flex items-start space-x-2.5 bg-slate-900/40 p-2.5 rounded-xl border border-slate-800/60 text-xs text-slate-300">
-                        {result.threatScore > 50 ? (
-                          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                        ) : (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                        )}
-                        <span>{flag}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Prescribed Action */}
-                <div>
-                  <h4 className="text-xs font-mono uppercase tracking-wider text-blue-400 mb-1">Prescribed Action:</h4>
-                  <p className="text-xs text-slate-300 bg-blue-950/20 border border-blue-900/40 p-3 rounded-xl leading-relaxed">
-                    {result.prescribedAction}
-                  </p>
-                </div>
-
-                {/* PDF Export Button */}
-                <button
-                  onClick={downloadReport}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition-colors flex items-center justify-center space-x-2"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Download Signed Audit Report (PDF)</span>
-                </button>
-              </div>
+          {/* Canvas & Image Workspace */}
+          <div className="relative w-full aspect-[3/4] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
+            {selectedImage ? (
+              <>
+                {/* Visible DOM Image */}
+                <img
+                  ref={imgRef}
+                  src={selectedImage}
+                  alt="Receipt Evidence"
+                  className={`w-full h-full object-contain ${showELA ? "hidden" : "block"}`}
+                  onLoad={() => {
+                    if (canvasRef.current && imgRef.current) {
+                      generateELACanvas(imgRef.current, canvasRef.current);
+                    }
+                  }}
+                />
+                {/* ELA Heatmap Canvas */}
+                <canvas
+                  ref={canvasRef}
+                  className={`w-full h-full object-contain ${showELA ? "block" : "hidden"}`}
+                />
+              </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4">
-                <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600">
-                  <ShieldCheck className="w-8 h-8" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-slate-300">Awaiting Input Data</h3>
-                  <p className="text-xs text-slate-500 max-w-sm mt-1">
-                    Upload a payment screenshot, enter a UPI intent link, or test with one of the evaluation presets.
-                  </p>
-                </div>
+              <div className="text-xs text-slate-500 font-mono text-center p-4">
+                No evidence loaded. Upload a receipt or select a sandbox sample.
               </div>
             )}
           </div>
+
+          {/* Results Summary Box */}
+          {result && (
+            <div className="flex flex-col gap-3 p-4 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono text-slate-400">Threat Index:</span>
+                <span
+                  className={`text-sm font-bold font-mono ${
+                    result.threatScore > 50 ? "text-red-400" : "text-emerald-400"
+                  }`}
+                >
+                  {result.threatScore} / 100 ({result.verdict})
+                </span>
+              </div>
+
+              {result.anomaliesDetected && result.anomaliesDetected.length > 0 && (
+                <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                  <span className="text-xs font-mono text-slate-400 block">Flagged Discrepancies:</span>
+                  {result.anomaliesDetected.map((anomaly, idx) => (
+                    <div key={idx} className="text-xs text-slate-300 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                      <span>{anomaly}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {result.uriAudit && result.uriAudit.flags.length > 0 && (
+                <div className="space-y-1 pt-2 border-t border-slate-800/80">
+                  <span className="text-xs font-mono text-red-400 block">URI Trap Flags:</span>
+                  {result.uriAudit.flags.map((flag, idx) => (
+                    <div key={idx} className="text-xs text-red-300 flex items-start gap-1.5">
+                      <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                      <span>{flag}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleDownloadPDF}
+                className="mt-2 w-full py-2.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold font-mono flex items-center justify-center gap-2 transition"
+              >
+                <FileDown className="w-4 h-4 text-indigo-400" />
+                Export Certified Audit Report (.PDF)
+              </button>
+            </div>
+          )}
         </section>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }
