@@ -2,8 +2,8 @@
 
 import React, { useState, useRef } from "react";
 import { Shield, ShieldAlert, CheckCircle2, AlertTriangle, FileDown, Eye, Upload, RefreshCw, Zap } from "lucide-react";
-import { computeSHA256, generateELACanvas } from "@/utils/forensics";
-import { generateForensicPDF } from "@/utils/pdfGenerator";
+import { computeSHA256, generateELACanvas } from "../utils/forensics";
+import { generateForensicPDF } from "../utils/pdfGenerator";
 
 interface ForensicResult {
   threatScore: number;
@@ -34,14 +34,17 @@ export default function Home() {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Ingestion handler: computes SHA-256 and sets preview
   const processFile = async (file: File) => {
     setImageFile(file);
     setResult(null);
     setShowELA(false);
 
-    const hash = await computeSHA256(file);
-    setSha256Hash(hash);
+    try {
+      const hash = await computeSHA256(file);
+      setSha256Hash(hash);
+    } catch {
+      setSha256Hash("HASH_UNAVAILABLE");
+    }
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -56,12 +59,10 @@ export default function Home() {
     }
   };
 
-  // 1-Click Forensic Sandbox (Demo mode)
   const loadDemoSample = (isForgery: boolean) => {
     setResult(null);
     setShowELA(false);
 
-    // Dynamic mock canvas receipt to avoid static asset dependencies
     const canvas = document.createElement("canvas");
     canvas.width = 600;
     canvas.height = 800;
@@ -71,7 +72,6 @@ export default function Home() {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, 600, 800);
 
-    // Header bar
     ctx.fillStyle = isForgery ? "#002e6e" : "#5f259f";
     ctx.fillRect(0, 0, 600, 120);
 
@@ -79,7 +79,6 @@ export default function Home() {
     ctx.font = "bold 28px sans-serif";
     ctx.fillText(isForgery ? "PAYMENT SUCCESSFUL" : "TRANSACTION SUCCESSFUL", 40, 75);
 
-    // Body content
     ctx.fillStyle = "#1e293b";
     ctx.font = isForgery ? "bold 44px 'Courier New'" : "bold 40px sans-serif";
     ctx.fillText("INR 25,000.00", 40, 240);
@@ -91,7 +90,6 @@ export default function Home() {
     ctx.fillText("Date: 29 Sep 2026, 02:15 PM", 40, 380);
 
     if (isForgery) {
-      // Intentional artifact mismatch box (simulating edited area)
       ctx.fillStyle = "rgba(239, 68, 68, 0.15)";
       ctx.fillRect(35, 195, 340, 60);
     }
@@ -108,7 +106,6 @@ export default function Home() {
     }, "image/jpeg", 0.92);
   };
 
-  // Run full forensic pipeline
   const runAnalysis = async () => {
     if (cooldown || analyzing) return;
     if (!selectedImage && !rawUriInput) return;
@@ -135,7 +132,6 @@ export default function Home() {
       const data: ForensicResult = await response.json();
       setResult(data);
 
-      // Trigger ELA generation if image present
       if (imgRef.current && canvasRef.current) {
         generateELACanvas(imgRef.current, canvasRef.current);
       }
@@ -147,7 +143,6 @@ export default function Home() {
       });
     } finally {
       setAnalyzing(false);
-      // 5-second cooldown guardrail
       setTimeout(() => setCooldown(false), 5000);
     }
   };
@@ -165,7 +160,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center px-4 py-12">
-      {/* Header */}
       <header className="max-w-4xl w-full text-center mb-10">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-950/60 border border-indigo-700/40 text-indigo-400 text-xs font-mono uppercase tracking-wider mb-4">
           <Shield className="w-3.5 h-3.5" />
@@ -180,14 +174,12 @@ export default function Home() {
       </header>
 
       <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Ingestion Column */}
         <section className="flex flex-col gap-5 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
             <Upload className="w-4 h-4 text-indigo-400" />
             Evidence Ingestion
           </h2>
 
-          {/* Upload Dropzone */}
           <label className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition bg-slate-950/40 min-h-[200px]">
             <input type="file" accept="image/*" onChange={handleFileInput} className="hidden" />
             <Upload className="w-8 h-8 text-slate-400 mb-2" />
@@ -195,7 +187,6 @@ export default function Home() {
             <span className="text-xs text-slate-500 mt-1">PNG, JPG, or WEBP</span>
           </label>
 
-          {/* 1-Click Forensic Sandbox Buttons */}
           <div className="flex flex-col gap-2 pt-1 border-t border-slate-800/80">
             <span className="text-xs font-mono text-slate-400">1-Click Sandbox Test:</span>
             <div className="flex items-center gap-2">
@@ -218,7 +209,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Deep Link Input */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-mono text-slate-400">Raw UPI Deep-Link / QR String (Optional):</label>
             <input
@@ -230,7 +220,6 @@ export default function Home() {
             />
           </div>
 
-          {/* SHA-256 Digest Tag */}
           {sha256Hash && (
             <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 font-mono text-[10px] break-all text-slate-400">
               <span className="text-indigo-400 font-bold block mb-0.5">SHA-256 Evidence Digest:</span>
@@ -238,7 +227,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Execute Button */}
           <button
             onClick={runAnalysis}
             disabled={(!selectedImage && !rawUriInput) || analyzing || cooldown}
@@ -260,7 +248,6 @@ export default function Home() {
           </button>
         </section>
 
-        {/* Inspection & Results Column */}
         <section className="flex flex-col gap-5 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
@@ -278,11 +265,9 @@ export default function Home() {
             )}
           </div>
 
-          {/* Canvas & Image Workspace */}
           <div className="relative w-full aspect-[3/4] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
             {selectedImage ? (
               <>
-                {/* Visible DOM Image */}
                 <img
                   ref={imgRef}
                   src={selectedImage}
@@ -294,7 +279,6 @@ export default function Home() {
                     }
                   }}
                 />
-                {/* ELA Heatmap Canvas */}
                 <canvas
                   ref={canvasRef}
                   className={`w-full h-full object-contain ${showELA ? "block" : "hidden"}`}
@@ -307,7 +291,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* Results Summary Box */}
           {result && (
             <div className="flex flex-col gap-3 p-4 rounded-xl bg-slate-950 border border-slate-800">
               <div className="flex items-center justify-between">
