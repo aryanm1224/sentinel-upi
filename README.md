@@ -1,5 +1,5 @@
 # 🛡️ SentinelUPI — Real-Time Visual Fraud & Social Engineering Interceptor
-> **Affecio Hacks '26 Submission** | Cyber Threat Intelligence & Payment Security
+> Cyber Threat Intelligence & Payment Security
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-sentinel--upi.vercel.app-0070F3?style=for-the-badge&logo=vercel&logoColor=white)](https://sentinel-upi.vercel.app)
 
